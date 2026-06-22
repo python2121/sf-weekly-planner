@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ day_date.isoformat() }} — SF Weekly{% endblock %}
+{% block content %}
+<section class="day-nav">
+  {% if prev_date %}
+    <a class="nav-link" href="{{ url_for('day', date_str=prev_date.isoformat()) }}">&larr; {{ prev_date.isoformat() }}</a>
+  {% else %}
+    <span class="nav-link disabled">&larr;</span>
+  {% endif %}
+  <h1>{{ day_date.strftime('%A, %B %-d, %Y') }}</h1>
+  {% if next_date %}
+    <a class="nav-link" href="{{ url_for('day', date_str=next_date.isoformat()) }}">{{ next_date.isoformat() }} &rarr;</a>
+  {% else %}
+    <span class="nav-link disabled">&rarr;</span>
+  {% endif %}
+</section>
+
+<div class="day-layout">
+  {% include "_urgent_rail.html" %}
+
+  <section class="columns">
+    <article class="col">
+      <h2>Music</h2>
+      {% if music_html %}
+        <div class="md">{{ music_html|safe }}</div>
+      {% else %}
+        <p class="empty">No music file for this date.</p>
+      {% endif %}
+    </article>
+    <article class="col">
+      <h2>General</h2>
+      {% if general_html %}
+        <div class="md">{{ general_html|safe }}</div>
+      {% else %}
+        <p class="empty">No general file for this date.</p>
+      {% endif %}
+    </article>
+  </section>
+</div>
+{% endblock %}

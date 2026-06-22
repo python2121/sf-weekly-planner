@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SF Weekly{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">SF Weekly</a>
+    <nav>
+      <a href="{{ url_for('calendar_today') }}">Calendar</a>
+      <a href="{{ url_for('horizon') }}">Horizon</a>
+      <a href="{{ url_for('urgent') }}" class="urgent-link">
+        Tickets{% if urgent_count %}<span class="badge">{{ urgent_count }}</span>{% endif %}
+      </a>
+      <button class="refresh-btn" id="refresh-btn" title="Regenerate today's events" aria-label="Refresh today">↻</button>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    (function () {
+      const btn = document.getElementById('refresh-btn');
+      if (!btn) return;
+      const defaultLabel = '↻';
+      const defaultTitle = "Regenerate today's events";
+      function restore() {
+        btn.disabled = false;
+        btn.textContent = defaultLabel;
+        btn.title = defaultTitle;
+        btn.classList.remove('ok', 'busy', 'err');
+      }
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = '…';
+        btn.title = 'Triggering refresh…';
+        try {
+          const r = await fetch('/api/refresh', { method: 'POST' });
+          if (r.status === 202) {
+            btn.textContent = '✓';
+            btn.title = 'Started — refresh page in a few minutes';
+            btn.classList.add('ok');
+          } else if (r.status === 409) {
+            btn.textContent = '⏳';
+            btn.title = 'A run is already in progress';
+            btn.classList.add('busy');
+          } else {
+            btn.textContent = '!';
+            btn.title = 'Failed to reach runner';
+            btn.classList.add('err');
+          }
+        } catch (e) {
+          btn.textContent = '!';
+          btn.title = 'Network error';
+          btn.classList.add('err');
+        }
+        setTimeout(restore, 6000);
+      });
+    })();
+  </script>
+</body>
+</html>

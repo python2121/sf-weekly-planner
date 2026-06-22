@@ -1,0 +1,421 @@
+openapi: 3.0.3
+info:
+  title: SF Weekly Planner API
+  version: 1.0.0
+  description: |
+    Read and trigger generation of San Francisco event digests.
+
+    The same Flask process serves the browser UI and this API on the same port
+    (default `7878`). Override with the `WEB_PORT` env var on the host.
+
+    All responses are JSON unless noted. There is no authentication —
+    intended for trusted home/LAN deployment.
+
+    Date strings are ISO `YYYY-MM-DD`.
+
+servers:
+  - url: http://localhost:7878
+    description: Default local deployment (override via WEB_PORT)
+
+tags:
+  - name: Meta
+    description: Discovery and health
+  - name: Events
+    description: Daily event digests (music + general)
+  - name: Horizon
+    description: 6-month outlook and time-sensitive items
+  - name: Actions
+    description: Mutating endpoints
+
+paths:
+  /api:
+    get:
+      summary: Self-describing endpoint index
+      operationId: apiIndex
+      tags: [Meta]
+      responses:
+        "200":
+          description: Map of available routes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endpoints:
+                    type: object
+                    additionalProperties:
+                      type: string
+              example:
+                endpoints:
+                  "GET  /api/dates": list all available event dates
+                  "GET  /api/day/<YYYY-MM-DD>": music + general markdown/html for a date
+                  "GET  /api/calendar/<year>/<month>": dates with events in a given month
+                  "GET  /api/horizon": horizon markdown/html + urgent items
+                  "GET  /api/urgent": items with upcoming Action by dates
+                  "GET  /api/status": runner status + event store summary
+                  "POST /api/refresh": force-regenerate today (returns 202/409)
+
+  /api/dates:
+    get:
+      summary: List dates with event files
+      operationId: listDates
+      tags: [Events]
+      responses:
+        "200":
+          description: All dates present in the event store, sorted ascending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatesResponse'
+              example:
+                dates: ["2026-06-20", "2026-06-21", "2026-06-22"]
+                count: 3
+                latest: "2026-06-22"
+
+  /api/day/{date}:
+    get:
+      summary: Get a day's music and general event digests
+      operationId: getDay
+      tags: [Events]
+      parameters:
+        - name: date
+          in: path
+          required: true
+          description: ISO date `YYYY-MM-DD`
+          schema:
+            type: string
+            format: date
+          example: "2026-06-22"
+      responses:
+        "200":
+          description: |
+            Day payload. `music` and/or `general` may be null if that file
+            does not exist for the date. `prev` / `next` link to adjacent
+            dates that have at least one event file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DayResponse'
+        "400":
+          description: Invalid date format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/calendar/{year}/{month}:
+    get:
+      summary: List dates with events in a given month
+      operationId: getCalendarMonth
+      tags: [Events]
+      parameters:
+        - name: year
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 2026
+        - name: month
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          example: 6
+      responses:
+        "200":
+          description: Dates that have at least one event file in this month
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarMonth'
+        "400":
+          description: Month out of range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/horizon:
+    get:
+      summary: Get the 6-month horizon digest plus urgent items
+      description: |
+        Returns the full horizon markdown (rendered + raw) along with the
+        same `urgent` list available at `/api/urgent`, for callers that
+        want a one-shot fetch.
+      operationId: getHorizon
+      tags: [Horizon]
+      responses:
+        "200":
+          description: |
+            Horizon payload. `horizon` is null if `horizon.md` has not
+            been generated yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HorizonResponse'
+
+  /api/urgent:
+    get:
+      summary: Items with an upcoming Action by date
+      description: |
+        Parsed from `horizon.md`. An item appears here when its
+        `Action by:` date falls between today and today + `window_days`
+        (configurable via the `URGENT_WINDOW_DAYS` env var, default 30).
+
+        Sorted by `action_date` ascending — most urgent first.
+      operationId: getUrgent
+      tags: [Horizon]
+      responses:
+        "200":
+          description: List of upcoming urgent items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UrgentResponse'
+
+  /api/status:
+    get:
+      summary: Runner liveness and event store summary
+      description: |
+        Live-proxies the runner's `/status` endpoint and combines it with a
+        snapshot of the event store. If the runner is unreachable,
+        `runner` is null and `runner_error` carries the reason.
+      operationId: getStatus
+      tags: [Meta]
+      responses:
+        "200":
+          description: Combined runner + event store status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/refresh:
+    post:
+      summary: Trigger a force-regenerate of today's events
+      description: |
+        Asks the runner container to execute `/sf-daily --force` immediately.
+        The HTTP call returns synchronously, but the regeneration itself
+        runs asynchronously in the runner — typical completion is
+        1–5 minutes. Poll `/api/status` (runner.running) to detect when
+        it finishes.
+
+        Concurrency: the runner has a single in-process mutex. If a run
+        is already in flight (scheduled or manual), this returns `409`.
+      operationId: triggerRefresh
+      tags: [Actions]
+      responses:
+        "202":
+          description: Refresh started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [started]
+                required: [status]
+              example:
+                status: started
+        "409":
+          description: A run is already in progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [busy]
+                required: [status]
+              example:
+                status: busy
+        "502":
+          description: Could not reach the runner container
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    MarkdownContent:
+      type: object
+      description: A markdown document, returned in both raw and pre-rendered form.
+      properties:
+        markdown:
+          type: string
+          description: Raw markdown source as stored on disk
+        html:
+          type: string
+          description: HTML rendered server-side (fenced_code, tables, sane_lists, nl2br extensions)
+      required: [markdown, html]
+
+    DatesResponse:
+      type: object
+      properties:
+        dates:
+          type: array
+          items:
+            type: string
+            format: date
+          description: All dates with at least one event file, sorted ascending
+        count:
+          type: integer
+        latest:
+          type: string
+          format: date
+          nullable: true
+          description: Most recent date in the store, or null if empty
+      required: [dates, count, latest]
+
+    DayResponse:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        music:
+          allOf:
+            - $ref: '#/components/schemas/MarkdownContent'
+          nullable: true
+          description: Music digest for the date, or null if not generated
+        general:
+          allOf:
+            - $ref: '#/components/schemas/MarkdownContent'
+          nullable: true
+          description: General digest for the date, or null if not generated
+        prev:
+          type: string
+          format: date
+          nullable: true
+          description: Earlier date in the store, or null if none
+        next:
+          type: string
+          format: date
+          nullable: true
+          description: Later date in the store, or null if none
+      required: [date, music, general, prev, next]
+
+    CalendarMonth:
+      type: object
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        dates:
+          type: array
+          items:
+            type: string
+            format: date
+        count:
+          type: integer
+      required: [year, month, dates, count]
+
+    UrgentItem:
+      type: object
+      description: A horizon entry that has a time-sensitive Action by line.
+      properties:
+        title:
+          type: string
+          description: Event title, extracted from the entry's bold prefix
+        action_date:
+          type: string
+          format: date
+          description: Date by which the user needs to act (on-sale, presale close, early-bird cutoff)
+        days_left:
+          type: integer
+          description: Days from today to action_date — 0 means today
+        reason:
+          type: string
+          description: Short clause explaining the time pressure
+        url:
+          type: string
+          format: uri
+          nullable: true
+          description: First URL found in the entry (typically the ticket link)
+      required: [title, action_date, days_left, reason, url]
+
+    UrgentResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UrgentItem'
+        count:
+          type: integer
+        window_days:
+          type: integer
+      required: [items, count, window_days]
+
+    HorizonResponse:
+      type: object
+      properties:
+        horizon:
+          allOf:
+            - $ref: '#/components/schemas/MarkdownContent'
+          nullable: true
+        urgent:
+          type: array
+          items:
+            $ref: '#/components/schemas/UrgentItem'
+      required: [horizon, urgent]
+
+    RunnerStatus:
+      type: object
+      properties:
+        running:
+          type: boolean
+          description: True while a generation is in flight
+      required: [running]
+
+    StatusResponse:
+      type: object
+      properties:
+        runner:
+          allOf:
+            - $ref: '#/components/schemas/RunnerStatus'
+          nullable: true
+          description: Runner status, or null if unreachable
+        runner_error:
+          type: string
+          nullable: true
+          description: Why the runner could not be reached, if applicable
+        events_dir:
+          type: string
+          description: Absolute path the web container reads from
+        events_dir_exists:
+          type: boolean
+        available_dates:
+          type: integer
+        latest_date:
+          type: string
+          format: date
+          nullable: true
+        horizon_exists:
+          type: boolean
+      required:
+        - runner
+        - runner_error
+        - events_dir
+        - events_dir_exists
+        - available_dates
+        - latest_date
+        - horizon_exists
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        status:
+          type: string
+      example:
+        error: "invalid date, expected YYYY-MM-DD"

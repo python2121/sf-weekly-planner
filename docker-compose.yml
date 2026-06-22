@@ -1,0 +1,32 @@
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: runner/Dockerfile
+    container_name: sf-runner
+    restart: unless-stopped
+    environment:
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN}
+      RUN_TIME: ${RUN_TIME:-10:30}
+      TZ: ${TZ:-America/Los_Angeles}
+    volumes:
+      - type: bind
+        source: ${EVENTS_VOLUME}
+        target: /work/events
+
+  web:
+    build:
+      context: ./web
+    container_name: sf-web
+    restart: unless-stopped
+    environment:
+      EVENTS_DIR: /data/events
+      RUNNER_URL: http://runner:5001
+      TZ: ${TZ:-America/Los_Angeles}
+    ports:
+      - "${WEB_PORT:-7878}:5000"
+    volumes:
+      - type: bind
+        source: ${EVENTS_VOLUME}
+        target: /data/events
+        read_only: true

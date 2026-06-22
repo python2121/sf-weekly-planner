@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Tickets coming due — SF Weekly{% endblock %}
+{% block content %}
+<section class="day-nav">
+  <h1>🎟️ Tickets coming due</h1>
+</section>
+<p class="empty" style="margin-bottom: 20px;">
+  Items from <code>horizon.md</code> with an <code>Action by:</code> date in the next {{ window_days }} days.
+</p>
+
+{% if items %}
+  <ul class="urgent-list">
+    {% for item in items %}
+      <li class="urgent-card {% if item.days_left <= 3 %}soon{% endif %}">
+        <div class="urgent-when">
+          <strong>
+            {% if item.days_left == 0 %}today
+            {% elif item.days_left == 1 %}tomorrow
+            {% else %}in {{ item.days_left }} days{% endif %}
+          </strong>
+          <span class="rail-date">· {{ item.action_date.strftime('%a %b %-d, %Y') }}</span>
+        </div>
+        <div class="urgent-title">
+          {% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>
+          {% else %}{{ item.title }}{% endif %}
+        </div>
+        {% if item.reason %}<div class="urgent-reason">{{ item.reason }}</div>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="empty">Nothing flagged. Either horizon hasn't been generated yet, or no upcoming items have an Action by date in the window.</p>
+{% endif %}
+{% endblock %}

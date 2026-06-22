@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Horizon — SF Weekly{% endblock %}
+{% block content %}
+<section class="day-nav">
+  <h1>6-month horizon</h1>
+</section>
+{% if html %}
+  <article class="md">{{ html|safe }}</article>
+{% else %}
+  <p class="empty">No horizon file yet.</p>
+{% endif %}
+{% endblock %}

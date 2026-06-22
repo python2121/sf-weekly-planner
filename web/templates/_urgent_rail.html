@@ -1,0 +1,27 @@
+{% if urgent_top %}
+<aside class="urgent-rail">
+  <header class="rail-header">
+    <span>🎟️ Tickets coming due</span>
+    {% if urgent_count > urgent_top|length %}
+      <a href="{{ url_for('urgent') }}" class="rail-more">view all ({{ urgent_count }})</a>
+    {% endif %}
+  </header>
+  <ul>
+    {% for item in urgent_top %}
+      <li class="rail-item {% if item.days_left <= 3 %}soon{% endif %}">
+        <div class="rail-when">
+          {% if item.days_left == 0 %}today
+          {% elif item.days_left == 1 %}tomorrow
+          {% else %}in {{ item.days_left }} days{% endif %}
+          <span class="rail-date">· {{ item.action_date.strftime('%b %-d') }}</span>
+        </div>
+        <div class="rail-title">
+          {% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>
+          {% else %}{{ item.title }}{% endif %}
+        </div>
+        {% if item.reason %}<div class="rail-reason">{{ item.reason }}</div>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</aside>
+{% endif %}

@@ -1,0 +1,18 @@
+.claude/settings.local.json
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
+.DS_Store
+.env
+
+# Python (web/)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors
+.vscode/
+.idea/
+
+# Runtime
+*.log
