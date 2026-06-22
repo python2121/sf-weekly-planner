@@ -177,16 +177,15 @@ paths:
 
   /api/status:
     get:
-      summary: Runner liveness and event store summary
+      summary: Runner state and event store summary
       description: |
-        Live-proxies the runner's `/status` endpoint and combines it with a
-        snapshot of the event store. If the runner is unreachable,
-        `runner` is null and `runner_error` carries the reason.
+        Returns the in-process runner state (whether a `/sf-daily` run is
+        currently executing) plus a snapshot of the event store.
       operationId: getStatus
       tags: [Meta]
       responses:
         "200":
-          description: Combined runner + event store status
+          description: Runner + event store status
           content:
             application/json:
               schema:
@@ -196,13 +195,11 @@ paths:
     post:
       summary: Trigger a force-regenerate of today's events
       description: |
-        Asks the runner container to execute `/sf-daily --force` immediately.
-        The HTTP call returns synchronously, but the regeneration itself
-        runs asynchronously in the runner — typical completion is
-        1–5 minutes. Poll `/api/status` (runner.running) to detect when
-        it finishes.
+        Triggers `/sf-daily --force` in a background thread. Returns
+        immediately — typical completion is 1–5 minutes. Poll
+        `/api/status` (runner.running) to detect when it finishes.
 
-        Concurrency: the runner has a single in-process mutex. If a run
+        Concurrency: a single in-process mutex serializes runs. If one
         is already in flight (scheduled or manual), this returns `409`.
       operationId: triggerRefresh
       tags: [Actions]
@@ -233,12 +230,6 @@ paths:
                 required: [status]
               example:
                 status: busy
-        "502":
-          description: Could not reach the runner container
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   schemas:
@@ -374,23 +365,46 @@ components:
         running:
           type: boolean
           description: True while a generation is in flight
-      required: [running]
+        last_run:
+          allOf:
+            - $ref: '#/components/schemas/LastRun'
+          nullable: true
+          description: Summary of the most recent run, or null if none has finished yet
+      required: [running, last_run]
+
+    LastRun:
+      type: object
+      properties:
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        exit_code:
+          type: integer
+          nullable: true
+          description: claude subprocess exit code; null if the binary couldn't be invoked
+        auth_failed:
+          type: boolean
+          description: True if the run's output matched a known auth-failure pattern (likely indicates an expired CLAUDE_CODE_OAUTH_TOKEN)
+        error:
+          type: string
+          nullable: true
+          description: Local error (e.g. binary missing), independent of the subprocess output
+        force:
+          type: boolean
+          description: True if the run was triggered via POST /api/refresh
+      required: [started_at, ended_at, exit_code, auth_failed, error, force]
 
     StatusResponse:
       type: object
       properties:
         runner:
-          allOf:
-            - $ref: '#/components/schemas/RunnerStatus'
-          nullable: true
-          description: Runner status, or null if unreachable
-        runner_error:
-          type: string
-          nullable: true
-          description: Why the runner could not be reached, if applicable
+          $ref: '#/components/schemas/RunnerStatus'
         events_dir:
           type: string
-          description: Absolute path the web container reads from
+          description: Absolute path the app reads events from
         events_dir_exists:
           type: boolean
         available_dates:
@@ -403,7 +417,6 @@ components:
           type: boolean
       required:
         - runner
-        - runner_error
         - events_dir
         - events_dir_exists
         - available_dates

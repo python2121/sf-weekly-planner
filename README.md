@@ -8,10 +8,17 @@ A `/sf-daily` Claude Code slash command generates two markdown files per day —
 
 ## Architecture
 
-- `runner/` — Docker container that owns Claude Code. A small Node process serves an internal HTTP endpoint (`/run`, `/status`) and schedules `/sf-daily` once per day at `RUN_TIME`. Runs `/sf-daily` once on startup too (idempotent — skips if today's files exist).
-- `web/` — Flask app on port `7878` (host). Reads the event volume read-only. Hosts the browser UI and the JSON API.
-- `.claude/commands/sf-daily.md` — the generation prompt itself. Edits here are picked up on the next `docker compose build`.
-- Both containers bind-mount the same host directory (the value of `EVENTS_VOLUME` in `.env`) — runner writes to it, web reads from it.
+Single container. The Flask app at `web/app.py` does three things:
+
+1. Serves the browser UI and JSON API on host port `7878`.
+2. Runs a background scheduler thread that fires `/sf-daily` once on startup (idempotent — skips if today's files exist) and again at `RUN_TIME` every day.
+3. Spawns `claude` as a subprocess for each run. A single in-process mutex serializes scheduled and manual runs; `/api/refresh` returns `409 busy` if a run is already in flight.
+
+The image bundles Python (Flask) and Node (only as a runtime for the `@anthropic-ai/claude-code` CLI — there is no long-running Node process). The events bind-mount lands at `/work/events` so the same path is writable by the spawned `claude` and readable by Flask.
+
+- `Dockerfile` — image definition.
+- `web/app.py` — Flask + scheduler + runner.
+- `.claude/commands/sf-daily.md` — the generation prompt. Edits picked up on next `docker compose build`.
 
 ## Deploy
 
@@ -39,9 +46,9 @@ Then visit `http://<host>:7878`.
 
 - From the UI: the `↻` button in the top-right.
 - From the API: `curl -X POST http://<host>:7878/api/refresh`.
-- From the host: `docker compose exec runner sh -c 'cd /work && claude -p "/sf-daily --force" --dangerously-skip-permissions'`.
+- From the host: `docker compose exec app sh -c 'cd /work && claude -p "/sf-daily --force" --dangerously-skip-permissions'`.
 
-The runner has a single in-process mutex, so concurrent triggers return `409 busy` rather than spawning duplicate runs.
+A single in-process mutex serializes runs, so concurrent triggers return `409 busy` rather than spawning duplicate `claude` processes.
 
 ## API
 
@@ -58,6 +65,5 @@ No auth — designed for trusted home/LAN deployment. Put a reverse proxy in fro
 ## Logs
 
 ```bash
-docker compose logs -f runner   # runner schedule + claude output
-docker compose logs -f web      # Flask access log
+docker compose logs -f app   # scheduler, claude subprocess output, Flask access log
 ```

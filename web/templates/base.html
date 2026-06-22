@@ -18,6 +18,14 @@
       <button class="refresh-btn" id="refresh-btn" title="Regenerate today's events" aria-label="Refresh today">↻</button>
     </nav>
   </header>
+  {% if banner %}
+    <div class="banner banner-{{ banner.kind }}">
+      <div class="banner-body">
+        <strong>{{ banner.title }}</strong>
+        <span>{{ banner.detail }}</span>
+      </div>
+    </div>
+  {% endif %}
   <main>
     {% block content %}{% endblock %}
   </main>

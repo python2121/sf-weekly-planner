@@ -70,6 +70,33 @@ main {
   padding: 24px;
 }
 
+.banner {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.banner-body {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.banner-body strong { font-weight: 700; }
+.banner-auth {
+  background: #5a1f1f;
+  border-bottom-color: #e07a7a;
+  color: #fce4e4;
+}
+.banner-auth strong { color: #ffb4b4; }
+.banner-error {
+  background: #4a3a1a;
+  border-bottom-color: var(--accent);
+  color: #f3e3c2;
+}
+.banner-error strong { color: var(--accent); }
+
 .day-nav {
   display: flex;
   align-items: center;
