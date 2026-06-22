@@ -85,7 +85,7 @@ class Runner:
             print(f'{_ts()} spawn: claude -p "{arg}"', flush=True)
             try:
                 proc = subprocess.Popen(
-                    ["claude", "-p", arg, "--dangerously-skip-permissions"],
+                    ["claude", "-p", arg, "--verbose", "--dangerously-skip-permissions"],
                     cwd=str(WORK_DIR),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
