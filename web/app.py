@@ -84,19 +84,24 @@ class Runner:
             arg = "/sf-daily --force" if force else "/sf-daily"
             print(f'{_ts()} spawn: claude -p "{arg}"', flush=True)
             try:
-                result = subprocess.run(
+                proc = subprocess.Popen(
                     ["claude", "-p", arg, "--dangerously-skip-permissions"],
                     cwd=str(WORK_DIR),
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
                     text=True,
-                    check=False,
+                    bufsize=1,
                 )
-                exit_code = result.returncode
-                if result.stdout:
-                    print(result.stdout, flush=True)
-                if result.stderr:
-                    print(result.stderr, flush=True)
-                combined = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+                ring: list[str] = []
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    print(line, end="", flush=True)
+                    ring.append(line)
+                    if len(ring) > 200:
+                        ring.pop(0)
+                proc.wait()
+                exit_code = proc.returncode
+                combined = "".join(ring)
                 output_tail = combined[-2000:]
                 if exit_code != 0:
                     auth_failed = _detect_auth_failure(combined)
