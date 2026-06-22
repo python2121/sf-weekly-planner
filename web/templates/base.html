@@ -10,7 +10,8 @@
   <header class="topbar">
     <a class="brand" href="{{ url_for('index') }}">SF Weekly</a>
     <nav>
-      <a href="{{ url_for('calendar_today') }}">Calendar</a>
+      <a href="{{ url_for('events_calendar_today') }}">Events</a>
+      <a href="{{ url_for('calendar_today') }}">Runs</a>
       <a href="{{ url_for('horizon') }}">Horizon</a>
       <a href="{{ url_for('urgent') }}" class="urgent-link">
         Tickets{% if urgent_count %}<span class="badge">{{ urgent_count }}</span>{% endif %}

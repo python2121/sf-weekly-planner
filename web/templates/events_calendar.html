@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Events: {{ month_name }} {{ year }} — SF Weekly{% endblock %}
+{% block content %}
+<section class="day-nav">
+  <a class="nav-link" href="{{ url_for('events_calendar_view', year=prev_month[0], month=prev_month[1]) }}">&larr; prev month</a>
+  <h1>Events: {{ month_name }} {{ year }}</h1>
+  <a class="nav-link" href="{{ url_for('events_calendar_view', year=next_month[0], month=next_month[1]) }}">next month &rarr;</a>
+</section>
+
+<p class="empty" style="margin-bottom: 12px; font-size: 12px;">
+  Parsed from the music + general digests. Date detection is best-effort — entries with ambiguous dates are skipped.
+</p>
+
+<table class="calendar">
+  <thead>
+    <tr>
+      <th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for week in weeks %}
+      <tr>
+        {% for d in week %}
+          {% set count = counts.get(d, 0) %}
+          {% set in_month = (d.month == month) %}
+          {% set is_today = (d == today) %}
+          <td class="{% if not in_month %}out{% endif %} {% if is_today %}today{% endif %} {% if count %}has{% endif %}">
+            {% if count %}
+              <a href="{{ url_for('events_day', date_str=d.isoformat()) }}">
+                <span class="day-num">{{ d.day }}</span>
+                <span class="day-count">{{ count }}</span>
+              </a>
+            {% else %}
+              <span class="day-num">{{ d.day }}</span>
+            {% endif %}
+          </td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Events on {{ day_date.isoformat() }} — SF Weekly{% endblock %}
+{% block content %}
+<section class="day-nav">
+  <a class="nav-link" href="{{ url_for('events_calendar_view', year=day_date.year, month=day_date.month) }}">&larr; back to event calendar</a>
+  <h1>Events: {{ day_date.strftime('%A, %B %-d, %Y') }}</h1>
+  <span class="nav-link"></span>
+</section>
+
+{% if events %}
+  <ul class="event-list">
+    {% for e in events %}
+      <li class="event-card {{ e.kind }}">
+        <div class="event-meta">
+          <span class="event-kind">{{ e.kind }}</span>
+          <span class="event-source">sourced from {{ e.source_date.isoformat() }} digest</span>
+        </div>
+        <div class="md">{{ e.html|safe }}</div>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="empty">No events parsed for this date.</p>
+{% endif %}
+{% endblock %}

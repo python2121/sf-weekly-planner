@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import markdown
+from dateutil import parser as dateutil_parser
 from flask import Flask, abort, jsonify, redirect, render_template, url_for
 
 EVENTS_DIR = Path(os.environ.get("EVENTS_DIR", "/work/events"))
@@ -328,6 +329,111 @@ def parse_horizon_actions() -> list[dict]:
     return items
 
 
+# ---- Event-date extraction (for the "events calendar" view) ----
+
+MONTH_DATE_RE = re.compile(
+    r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?"
+    r"|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?"
+    r"\s+\d{1,2}(?:st|nd|rd|th)?(?:[,\s]+\d{4})?\b",
+    re.IGNORECASE,
+)
+NUMERIC_DATE_RE = re.compile(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b")
+LIST_ITEM_START = re.compile(r"^- ")
+
+
+def _parse_event_date(entry_text: str, source_date: date) -> date | None:
+    """Best-effort: extract the first plausible event date from a list-item block.
+    Returns None when nothing parseable falls inside a sane window relative to
+    the file's source date."""
+    default = datetime(source_date.year, source_date.month, source_date.day)
+    earliest = source_date - timedelta(days=7)
+    latest = source_date + timedelta(days=180)
+    for pattern in (MONTH_DATE_RE, NUMERIC_DATE_RE):
+        for m in pattern.finditer(entry_text):
+            try:
+                parsed = dateutil_parser.parse(m.group(0), default=default)
+            except (ValueError, OverflowError, TypeError):
+                continue
+            d = parsed.date()
+            # Year rollover: a "Jan 5" parsed against a December source likely means next year.
+            if d < source_date - timedelta(days=30):
+                try:
+                    d = d.replace(year=d.year + 1)
+                except ValueError:
+                    continue
+            if earliest <= d <= latest:
+                return d
+    return None
+
+
+def _extract_list_blocks(text: str) -> list[str]:
+    """Split a markdown body into list-item blocks. A block runs from a `- ` line
+    through its indented continuations, ending on a blank line or a new `- `."""
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if LIST_ITEM_START.match(line):
+            if current:
+                blocks.append("\n".join(current))
+            current = [line]
+        elif current and (line.startswith("  ") or line.startswith("\t")):
+            current.append(line)
+        elif not line.strip():
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+        else:
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def collect_events_by_date() -> dict[date, list[dict]]:
+    """Walk every daily file, parse out event-date candidates, dedupe across files.
+    Horizon is intentionally excluded — it's an open-ended outlook, not a per-day list."""
+    by_date: dict[date, list[dict]] = {}
+    seen: set[tuple] = set()
+    if not EVENTS_DIR.exists():
+        return by_date
+    for p in sorted(EVENTS_DIR.iterdir()):
+        m = DATE_RE.match(p.name)
+        if not m:
+            continue
+        source_date = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        kind = m.group(4)
+        try:
+            text = p.read_text()
+        except OSError:
+            continue
+        for block in _extract_list_blocks(text):
+            title_m = TITLE_RE.search(block)
+            if not title_m:
+                continue
+            title = title_m.group(1).strip()
+            event_date = _parse_event_date(block, source_date)
+            if not event_date:
+                continue
+            dedupe_key = (title.lower(), event_date)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            url_m = URL_RE.search(block)
+            by_date.setdefault(event_date, []).append(
+                {
+                    "title": title,
+                    "kind": kind,
+                    "event_date": event_date,
+                    "source_date": source_date,
+                    "block": block,
+                    "url": url_m.group(0) if url_m else None,
+                }
+            )
+    return by_date
+
+
 def urgent_items(window_days: int = URGENT_WINDOW_DAYS) -> list[dict]:
     today = date.today()
     cutoff = today + timedelta(days=window_days)
@@ -446,6 +552,48 @@ def urgent():
         items=urgent_items(),
         window_days=URGENT_WINDOW_DAYS,
     )
+
+
+@app.route("/events-calendar")
+def events_calendar_today():
+    today = date.today()
+    return redirect(url_for("events_calendar_view", year=today.year, month=today.month))
+
+
+@app.route("/events-calendar/<int:year>/<int:month>")
+def events_calendar_view(year: int, month: int):
+    if not (1 <= month <= 12):
+        abort(404)
+    events_by_date = collect_events_by_date()
+    cal = calendar.Calendar(firstweekday=6)
+    weeks = cal.monthdatescalendar(year, month)
+    counts = {d: len(events_by_date.get(d, [])) for week in weeks for d in week}
+    prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return render_template(
+        "events_calendar.html",
+        year=year,
+        month=month,
+        month_name=calendar.month_name[month],
+        weeks=weeks,
+        counts=counts,
+        prev_month=prev_month,
+        next_month=next_month,
+        today=date.today(),
+    )
+
+
+@app.route("/events-day/<date_str>")
+def events_day(date_str: str):
+    try:
+        d = date.fromisoformat(date_str)
+    except ValueError:
+        abort(404)
+    events_by_date = collect_events_by_date()
+    events = events_by_date.get(d, [])
+    for e in events:
+        e["html"] = markdown.markdown(_strip_bm_adjacent(e["block"]), extensions=MD_EXTENSIONS)
+    return render_template("events_day.html", events=events, day_date=d)
 
 
 @app.route("/api")

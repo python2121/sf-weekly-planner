@@ -296,3 +296,49 @@ main {
   margin-left: 4px;
   vertical-align: middle;
 }
+.calendar td .day-count {
+  display: inline-block;
+  background: var(--accent);
+  color: #14171a;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 9px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.event-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 1000px) {
+  .event-list { grid-template-columns: 1fr; }
+}
+.event-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 6px;
+  padding: 14px 18px;
+}
+.event-card.music { border-left-color: var(--link); }
+.event-card.general { border-left-color: var(--accent); }
+.event-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.event-card.music .event-kind { color: var(--link); }
+.event-card.general .event-kind { color: var(--accent); }
+.event-source { color: var(--muted); text-transform: none; letter-spacing: 0; font-size: 11px; }
+.event-card .md ul { padding-left: 18px; }
+.event-card .md li { margin-bottom: 4px; }
