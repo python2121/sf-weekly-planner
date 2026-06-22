@@ -51,7 +51,7 @@
           {% if e.event_date == today %} · today{% endif %}
         </div>
         <a class="upcoming-title" href="{{ url_for('events_day', date_str=e.event_date.isoformat()) }}">
-          {{ e.title }}
+          {% if e.bm_adjacent %}<span class="bm-flag" title="Burning Man–adjacent">🔥</span> {% endif %}{{ e.title }}
         </a>
         <span class="upcoming-kind">{{ e.kind }}</span>
       </li>

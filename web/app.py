@@ -368,6 +368,7 @@ def _parse_event_date(entry_text: str, source_date: date) -> date | None:
 
 NORMALIZE_TITLE_RE = re.compile(r"[^\w\s]")
 COLLAPSE_WS_RE = re.compile(r"\s+")
+BM_ADJACENT_DETECT_RE = re.compile(r"🔥|BM[- ]?adjacent", re.IGNORECASE)
 
 
 def _normalize_title(title: str) -> str:
@@ -440,6 +441,7 @@ def collect_events_by_date() -> dict[date, list[dict]]:
                 "source_date": source_date,
                 "block": block,
                 "url": url_m.group(0) if url_m else None,
+                "bm_adjacent": bool(BM_ADJACENT_DETECT_RE.search(block)),
             }
     by_date: dict[date, list[dict]] = {}
     for entry in deduped.values():
