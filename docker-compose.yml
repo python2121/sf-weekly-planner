@@ -3,10 +3,12 @@ services:
     build: .
     container_name: sf-weekly
     restart: unless-stopped
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
     environment:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN}
       RUN_TIME: ${RUN_TIME:-10:30}
       TZ: ${TZ:-America/Los_Angeles}
+      HOME: /tmp
     ports:
       - "${WEB_PORT:-7878}:5000"
     volumes:

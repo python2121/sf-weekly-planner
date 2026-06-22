@@ -11,6 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Non-root user — Claude Code refuses --dangerously-skip-permissions when run as root.
+# The runtime UID/GID can be overridden via docker-compose `user:` to match the
+# owner of the host events volume.
+RUN useradd -m -u 1000 -s /bin/bash app
+
 WORKDIR /app
 
 COPY web/requirements.txt .
@@ -21,9 +26,15 @@ COPY web/app.py /app/app.py
 COPY web/static /app/static
 COPY web/templates /app/templates
 
+RUN mkdir -p /work/events \
+    && chown -R 1000:1000 /work /app \
+    && chmod -R a+rX /work /app
+
 ENV EVENTS_DIR=/work/events
 ENV WORK_DIR=/work
 ENV SF_HEADLESS=1
+
+USER 1000:1000
 
 EXPOSE 5000
 
