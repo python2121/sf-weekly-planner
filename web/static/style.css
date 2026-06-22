@@ -65,9 +65,9 @@ a:hover { text-decoration: underline; }
 .refresh-btn.err { color: #e07a7a; border-color: #e07a7a; }
 
 main {
-  max-width: 1200px;
+  max-width: 1800px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 32px;
 }
 
 .banner {
@@ -264,23 +264,35 @@ main {
   border-radius: 6px;
   height: 80px;
   vertical-align: top;
-  padding: 8px;
+  padding: 0;
   font-size: 14px;
 }
 .calendar td.out { opacity: 0.3; }
 .calendar td.today { border-color: var(--accent); }
 .calendar td.has { background: #20292e; }
-.calendar td a {
+.calendar td > a,
+.calendar td > .day-num {
   display: block;
-  font-weight: 600;
-  color: var(--link);
+  padding: 8px;
+  height: 100%;
+  box-sizing: border-box;
 }
-.calendar td.has::after {
-  content: "●";
+.calendar td > a {
+  text-decoration: none;
+  color: var(--link);
+  font-weight: 600;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+.calendar td > a:hover {
+  background: rgba(124, 183, 255, 0.10);
+}
+.calendar td > .day-num {
+  color: var(--muted);
+}
+.calendar td .day-dot {
   color: var(--accent);
   font-size: 10px;
   margin-left: 4px;
-}
-.calendar td span {
-  color: var(--muted);
+  vertical-align: middle;
 }

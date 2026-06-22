@@ -255,10 +255,17 @@ def adjacent_date(d: date, direction: str) -> date | None:
     return later[0] if later else None
 
 
+BM_ADJACENT_RE = re.compile(r"\s*BM[- ]?adjacent[.,]?", re.IGNORECASE)
+
+
+def _strip_bm_adjacent(text: str) -> str:
+    return BM_ADJACENT_RE.sub("", text)
+
+
 def render_md(path: Path) -> str | None:
     if not path.exists():
         return None
-    return markdown.markdown(path.read_text(), extensions=MD_EXTENSIONS)
+    return markdown.markdown(_strip_bm_adjacent(path.read_text()), extensions=MD_EXTENSIONS)
 
 
 def md_payload(path: Path) -> dict | None:
@@ -267,7 +274,7 @@ def md_payload(path: Path) -> dict | None:
     text = path.read_text()
     return {
         "markdown": text,
-        "html": markdown.markdown(text, extensions=MD_EXTENSIONS),
+        "html": markdown.markdown(_strip_bm_adjacent(text), extensions=MD_EXTENSIONS),
     }
 
 

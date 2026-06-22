@@ -22,9 +22,12 @@
           {% set is_today = (d == today) %}
           <td class="{% if not in_month %}out{% endif %} {% if is_today %}today{% endif %} {% if has_events %}has{% endif %}">
             {% if has_events %}
-              <a href="{{ url_for('day', date_str=d.isoformat()) }}">{{ d.day }}</a>
+              <a href="{{ url_for('day', date_str=d.isoformat()) }}">
+                <span class="day-num">{{ d.day }}</span>
+                <span class="day-dot">●</span>
+              </a>
             {% else %}
-              <span>{{ d.day }}</span>
+              <span class="day-num">{{ d.day }}</span>
             {% endif %}
           </td>
         {% endfor %}

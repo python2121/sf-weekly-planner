@@ -6,6 +6,12 @@ description: Generate SF events digests (music + general) and refresh the 6-mont
 
 Generate San Francisco event digests. Arguments: $ARGUMENTS
 
+## Execution discipline
+
+- Fan-out means **parallel `Task` subagent calls** (multiple Task tool uses in a single message) and **parallel `WebFetch` calls** (multiple WebFetch tool uses in a single message). The parent waits for all of them — that's the point.
+- **Do NOT use `Workflow` or any background-task mechanism.** If you reach for a tool that spawns work the parent doesn't wait for, you've made the wrong choice. The parent must remain blocked until every file is on disk.
+- Cap concurrent `Task` subagents at **4 at a time** to keep token usage sane. If a step needs more than 4 (e.g., the horizon venue sweep), batch them.
+
 ## Output location
 
 All files live in the `events/` directory relative to the project root (the current working directory when this command runs). On the laptop that resolves to `/Users/andrewnowicki/Documents/code/sf-weekly-planner/events/`. In the containerized runner that directory is a bind-mount onto the host's events volume.
