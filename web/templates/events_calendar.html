@@ -39,4 +39,24 @@
     {% endfor %}
   </tbody>
 </table>
+
+{% if upcoming %}
+<section class="upcoming-section">
+  <h2>Coming up <span class="upcoming-count">({{ upcoming|length }})</span></h2>
+  <ul class="upcoming-list">
+    {% for e in upcoming %}
+      <li class="upcoming-item {{ e.kind }}">
+        <div class="upcoming-when">
+          {{ e.event_date.strftime('%a %b %-d') }}
+          {% if e.event_date == today %} · today{% endif %}
+        </div>
+        <a class="upcoming-title" href="{{ url_for('events_day', date_str=e.event_date.isoformat()) }}">
+          {{ e.title }}
+        </a>
+        <span class="upcoming-kind">{{ e.kind }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 {% endblock %}

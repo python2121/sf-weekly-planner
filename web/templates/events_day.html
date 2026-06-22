@@ -2,10 +2,22 @@
 {% block title %}Events on {{ day_date.isoformat() }} — SF Weekly{% endblock %}
 {% block content %}
 <section class="day-nav">
-  <a class="nav-link" href="{{ url_for('events_calendar_view', year=day_date.year, month=day_date.month) }}">&larr; back to event calendar</a>
+  {% if prev_event_date %}
+    <a class="nav-link" href="{{ url_for('events_day', date_str=prev_event_date.isoformat()) }}">&larr; {{ prev_event_date.isoformat() }}</a>
+  {% else %}
+    <span class="nav-link disabled">&larr;</span>
+  {% endif %}
   <h1>Events: {{ day_date.strftime('%A, %B %-d, %Y') }}</h1>
-  <span class="nav-link"></span>
+  {% if next_event_date %}
+    <a class="nav-link" href="{{ url_for('events_day', date_str=next_event_date.isoformat()) }}">{{ next_event_date.isoformat() }} &rarr;</a>
+  {% else %}
+    <span class="nav-link disabled">&rarr;</span>
+  {% endif %}
 </section>
+
+<div style="margin-bottom: 16px;">
+  <a class="nav-link" href="{{ url_for('events_calendar_view', year=day_date.year, month=day_date.month) }}">&larr; back to event calendar</a>
+</div>
 
 {% if events %}
   <ul class="event-list">

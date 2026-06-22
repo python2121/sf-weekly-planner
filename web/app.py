@@ -366,6 +366,18 @@ def _parse_event_date(entry_text: str, source_date: date) -> date | None:
     return None
 
 
+NORMALIZE_TITLE_RE = re.compile(r"[^\w\s]")
+COLLAPSE_WS_RE = re.compile(r"\s+")
+
+
+def _normalize_title(title: str) -> str:
+    """Collapse a title to a fuzzy comparison key.
+    Strips emoji and punctuation, collapses whitespace, lowercases — so
+    "🔥 Tale Of Us", "Tale Of Us!", and "tale of us" all match."""
+    t = NORMALIZE_TITLE_RE.sub(" ", title)
+    return COLLAPSE_WS_RE.sub(" ", t).strip().lower()
+
+
 def _extract_list_blocks(text: str) -> list[str]:
     """Split a markdown body into list-item blocks. A block runs from a `- ` line
     through its indented continuations, ending on a blank line or a new `- `."""
@@ -393,11 +405,14 @@ def _extract_list_blocks(text: str) -> list[str]:
 
 def collect_events_by_date() -> dict[date, list[dict]]:
     """Walk every daily file, parse out event-date candidates, dedupe across files.
-    Horizon is intentionally excluded — it's an open-ended outlook, not a per-day list."""
-    by_date: dict[date, list[dict]] = {}
-    seen: set[tuple] = set()
+    Horizon is intentionally excluded — it's an open-ended outlook, not a per-day list.
+
+    Dedupe key is (normalized_title, event_date). Files are iterated in ascending
+    date order with last-write-wins, so the entry from the digest closest to the
+    event date is the one that survives — typically the most polished version."""
     if not EVENTS_DIR.exists():
-        return by_date
+        return {}
+    deduped: dict[tuple, dict] = {}
     for p in sorted(EVENTS_DIR.iterdir()):
         m = DATE_RE.match(p.name)
         if not m:
@@ -416,21 +431,19 @@ def collect_events_by_date() -> dict[date, list[dict]]:
             event_date = _parse_event_date(block, source_date)
             if not event_date:
                 continue
-            dedupe_key = (title.lower(), event_date)
-            if dedupe_key in seen:
-                continue
-            seen.add(dedupe_key)
             url_m = URL_RE.search(block)
-            by_date.setdefault(event_date, []).append(
-                {
-                    "title": title,
-                    "kind": kind,
-                    "event_date": event_date,
-                    "source_date": source_date,
-                    "block": block,
-                    "url": url_m.group(0) if url_m else None,
-                }
-            )
+            dedupe_key = (_normalize_title(title), event_date)
+            deduped[dedupe_key] = {
+                "title": title,
+                "kind": kind,
+                "event_date": event_date,
+                "source_date": source_date,
+                "block": block,
+                "url": url_m.group(0) if url_m else None,
+            }
+    by_date: dict[date, list[dict]] = {}
+    for entry in deduped.values():
+        by_date.setdefault(entry["event_date"], []).append(entry)
     return by_date
 
 
@@ -568,6 +581,15 @@ def events_calendar_view(year: int, month: int):
     cal = calendar.Calendar(firstweekday=6)
     weeks = cal.monthdatescalendar(year, month)
     counts = {d: len(events_by_date.get(d, [])) for week in weeks for d in week}
+
+    today = date.today()
+    upcoming: list[dict] = []
+    for d in sorted(events_by_date.keys()):
+        if d < today:
+            continue
+        for e in events_by_date[d]:
+            upcoming.append(e)
+
     prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     next_month = (year + 1, 1) if month == 12 else (year, month + 1)
     return render_template(
@@ -577,9 +599,10 @@ def events_calendar_view(year: int, month: int):
         month_name=calendar.month_name[month],
         weeks=weeks,
         counts=counts,
+        upcoming=upcoming,
         prev_month=prev_month,
         next_month=next_month,
-        today=date.today(),
+        today=today,
     )
 
 
@@ -593,7 +616,17 @@ def events_day(date_str: str):
     events = events_by_date.get(d, [])
     for e in events:
         e["html"] = markdown.markdown(_strip_bm_adjacent(e["block"]), extensions=MD_EXTENSIONS)
-    return render_template("events_day.html", events=events, day_date=d)
+
+    sorted_dates = sorted(events_by_date.keys())
+    prior = [x for x in sorted_dates if x < d]
+    later = [x for x in sorted_dates if x > d]
+    return render_template(
+        "events_day.html",
+        events=events,
+        day_date=d,
+        prev_event_date=prior[-1] if prior else None,
+        next_event_date=later[0] if later else None,
+    )
 
 
 @app.route("/api")

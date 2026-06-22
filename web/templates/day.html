@@ -15,8 +15,10 @@
   {% endif %}
 </section>
 
-<div class="day-layout">
-  {% include "_urgent_rail.html" %}
+<div class="day-content{% if urgent_top %} with-rail{% endif %}">
+  {% if urgent_top %}
+    {% include "_urgent_rail.html" %}
+  {% endif %}
 
   <section class="columns">
     <article class="col">
