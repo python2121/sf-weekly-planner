@@ -1,4 +1,5 @@
 import calendar
+import json
 import os
 import re
 import subprocess
@@ -38,6 +39,60 @@ AUTH_ERROR_PATTERNS = [
 
 def _detect_auth_failure(text: str) -> bool:
     return any(p.search(text) for p in AUTH_ERROR_PATTERNS)
+
+
+def _trunc(s, n=80):
+    s = str(s).replace("\n", " ")
+    return s if len(s) <= n else s[:n] + "…"
+
+
+def _summarize_tool_input(name: str, inp: dict) -> str:
+    if name == "WebFetch":
+        return _trunc(inp.get("url", ""))
+    if name == "WebSearch":
+        return _trunc(inp.get("query", ""))
+    if name in ("Read", "Write", "Edit"):
+        return _trunc(inp.get("file_path", ""))
+    if name == "Bash":
+        return _trunc(inp.get("command", ""), 120)
+    if name == "Task":
+        return _trunc(inp.get("description") or inp.get("prompt", ""), 100)
+    if name in ("Grep", "Glob"):
+        return _trunc(inp.get("pattern", ""))
+    try:
+        return _trunc(json.dumps(inp), 100)
+    except Exception:
+        return "…"
+
+
+def _format_stream_event(raw: str) -> str | None:
+    """Pretty-print one NDJSON event from `claude --output-format stream-json`."""
+    try:
+        ev = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    t = ev.get("type")
+    if t == "assistant":
+        content = ev.get("message", {}).get("content", []) or []
+        out_lines = []
+        for item in content:
+            kind = item.get("type")
+            if kind == "text":
+                text = (item.get("text") or "").strip()
+                if text:
+                    out_lines.append(f"  💬 {_trunc(text, 300)}")
+            elif kind == "tool_use":
+                name = item.get("name", "?")
+                inp = item.get("input") or {}
+                out_lines.append(f"  → {name}: {_summarize_tool_input(name, inp)}")
+        return "\n".join(out_lines) if out_lines else None
+    if t == "result":
+        sub = ev.get("subtype", "")
+        cost = ev.get("total_cost_usd", 0) or 0
+        ms = ev.get("duration_ms", 0) or 0
+        return f"  ✓ {sub} (${cost:.3f}, {ms/1000:.1f}s)"
+    # system init, user (tool results), etc. — skip
+    return None
 
 app = Flask(__name__)
 
@@ -85,7 +140,15 @@ class Runner:
             print(f'{_ts()} spawn: claude -p "{arg}"', flush=True)
             try:
                 proc = subprocess.Popen(
-                    ["claude", "-p", arg, "--verbose", "--dangerously-skip-permissions"],
+                    [
+                        "claude",
+                        "-p",
+                        arg,
+                        "--verbose",
+                        "--output-format",
+                        "stream-json",
+                        "--dangerously-skip-permissions",
+                    ],
                     cwd=str(WORK_DIR),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -94,14 +157,19 @@ class Runner:
                 )
                 ring: list[str] = []
                 assert proc.stdout is not None
-                for line in proc.stdout:
-                    print(line, end="", flush=True)
-                    ring.append(line)
-                    if len(ring) > 200:
+                for raw in proc.stdout:
+                    raw = raw.rstrip("\n")
+                    if not raw:
+                        continue
+                    ring.append(raw)
+                    if len(ring) > 500:
                         ring.pop(0)
+                    formatted = _format_stream_event(raw)
+                    if formatted:
+                        print(formatted, flush=True)
                 proc.wait()
                 exit_code = proc.returncode
-                combined = "".join(ring)
+                combined = "\n".join(ring)
                 output_tail = combined[-2000:]
                 if exit_code != 0:
                     auth_failed = _detect_auth_failure(combined)
