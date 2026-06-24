@@ -11,7 +11,7 @@ A `/sf-daily` Claude Code slash command generates two markdown files per day —
 Single container. The Flask app at `web/app.py` does three things:
 
 1. Serves the browser UI and JSON API on host port `7878`.
-2. Runs a background scheduler thread that fires `/sf-daily` once on startup (idempotent — skips if today's files exist) and again at `RUN_TIME` every day.
+2. Runs a background scheduler thread that fires `/sf-daily` once on startup (idempotent — skips if today's files exist) and again at `RUN_TIME` every Monday.
 3. Spawns `claude` as a subprocess for each run. A single in-process mutex serializes scheduled and manual runs; `/api/refresh` returns `409 busy` if a run is already in flight.
 
 The image bundles Python (Flask) and Node (only as a runtime for the `@anthropic-ai/claude-code` CLI — there is no long-running Node process). The events bind-mount lands at `/work/events` so the same path is writable by the spawned `claude` and readable by Flask.
@@ -38,7 +38,7 @@ Then visit `http://<host>:7878`.
 |---|---|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Long-lived token from `claude setup-token` on your laptop. Uses your Pro/Max subscription. Expires after one year — set a calendar reminder. |
 | `EVENTS_VOLUME` | Absolute host path where event markdown lives. Both containers bind-mount it. Path can contain spaces — do not quote in `.env`. |
-| `RUN_TIME` | Daily run time in the runner's timezone, `HH:MM` 24h. Default `10:30`. |
+| `RUN_TIME` | Weekly run time (Monday) in the runner's timezone, `HH:MM` 24h. Default `02:00`. |
 | `TZ` | IANA timezone for the runner schedule and the UI. Default `America/Los_Angeles`. |
 | `WEB_PORT` | Host port for the UI + API. Default `7878`. |
 

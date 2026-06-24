@@ -14,7 +14,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, url_for
 
 EVENTS_DIR = Path(os.environ.get("EVENTS_DIR", "/work/events"))
 WORK_DIR = Path(os.environ.get("WORK_DIR", "/work"))
-RUN_TIME = os.environ.get("RUN_TIME", "10:30")
+RUN_TIME = os.environ.get("RUN_TIME", "02:00")
 URGENT_WINDOW_DAYS = int(os.environ.get("URGENT_WINDOW_DAYS", "30"))
 DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})-(music|general)\.md$")
 ACTION_RE = re.compile(
@@ -203,8 +203,11 @@ def _parse_run_time() -> tuple[int, int]:
         h, m = RUN_TIME.split(":")
         return int(h), int(m)
     except ValueError:
-        print(f"{_ts()} invalid RUN_TIME={RUN_TIME!r}, defaulting to 10:30", flush=True)
-        return 10, 30
+        print(f"{_ts()} invalid RUN_TIME={RUN_TIME!r}, defaulting to 02:00", flush=True)
+        return 2, 0
+
+
+MONDAY = 0
 
 
 def schedule_loop():
@@ -217,8 +220,10 @@ def schedule_loop():
         h, m = _parse_run_time()
         now = datetime.now()
         target = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        if target <= now:
-            target += timedelta(days=1)
+        days_ahead = (MONDAY - now.weekday()) % 7
+        if days_ahead == 0 and target <= now:
+            days_ahead = 7
+        target += timedelta(days=days_ahead)
         sleep_s = (target - now).total_seconds()
         print(
             f"{_ts()} next scheduled run at {target.isoformat(timespec='seconds')} "
