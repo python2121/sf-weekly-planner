@@ -375,13 +375,63 @@ NORMALIZE_TITLE_RE = re.compile(r"[^\w\s]")
 COLLAPSE_WS_RE = re.compile(r"\s+")
 BM_ADJACENT_DETECT_RE = re.compile(r"🔥|BM[- ]?adjacent", re.IGNORECASE)
 
+# Strip these as a prefix so "SFMOMA: Show X" and "Show X" collapse.
+TITLE_VENUE_PREFIX_RE = re.compile(
+    r"^(?:sfmoma|moad|cjm|ybca|de\s+young|legion\s+of\s+honor|"
+    r"asian\s+art\s+museum|contemporary\s+jewish\s+museum|"
+    r"yerba\s+buena(?:\s+center(?:\s+for\s+the\s+arts)?)?|"
+    r"sf\s+opera|sf\s+ballet|war\s+memorial\s+opera\s+house|"
+    r"herbst|davies\s+symphony\s+hall|the\s+fillmore|the\s+chapel|"
+    r"public\s+works|the\s+midway|great\s+northern|halcyon|"
+    r"1015\s+folsom|august\s+hall|bimbo'?s|audio|dna\s+lounge|"
+    r"bottom\s+of\s+the\s+hill|brick\s*(?:&|and)?\s*mortar|"
+    r"the\s+independent|cafe\s+du\s+nord|great\s+american\s+music\s+hall|"
+    r"regency\s+ballroom|bill\s+graham\s+civic|chase\s+center|"
+    r"svn\s+west|sf\s+mint|club\s+550)"
+    r"\s*[:\-—–]\s*",
+    re.IGNORECASE,
+)
+TITLE_PAREN_RE = re.compile(r"\([^)]*\)|\[[^\]]*\]")
+# "Title — Subtitle" / "Title – Subtitle" — drop the subtitle. Not regular hyphen,
+# since that would shred hyphenated names ("post-punk", "K-Hand").
+TITLE_EM_DASH_TRAIL_RE = re.compile(r"\s+[—–]\s+.*$")
+TITLE_JOINER_RE = re.compile(
+    r"\s+(?:w/|with|feat\.?|ft\.?|vs\.?|x|and|&|\+|b2b)\s+",
+    re.IGNORECASE,
+)
+TITLE_STOPWORDS = frozenset({
+    "the", "a", "an", "of", "for", "at", "in", "on", "to", "presents",
+})
 
-def _normalize_title(title: str) -> str:
-    """Collapse a title to a fuzzy comparison key.
-    Strips emoji and punctuation, collapses whitespace, lowercases — so
-    "🔥 Tale Of Us", "Tale Of Us!", and "tale of us" all match."""
-    t = NORMALIZE_TITLE_RE.sub(" ", title)
-    return COLLAPSE_WS_RE.sub(" ", t).strip().lower()
+
+def _title_tokens(title: str) -> frozenset[str]:
+    """Tokenize for fuzzy dedup. Strips 🔥/BM-adjacent markers, venue prefixes,
+    parenthetical noise, trailing em-dash subtitles, joiners (w/, +, &, b2b, …),
+    punctuation, and short stopwords. Returns empty when the title is just
+    marker noise — caller should drop those entries."""
+    t = BM_ADJACENT_DETECT_RE.sub(" ", title)
+    t = COLLAPSE_WS_RE.sub(" ", t).strip()
+    t = TITLE_VENUE_PREFIX_RE.sub("", t)
+    t = TITLE_PAREN_RE.sub(" ", t)
+    t = TITLE_EM_DASH_TRAIL_RE.sub("", t)
+    t = TITLE_JOINER_RE.sub(" ", t)
+    t = NORMALIZE_TITLE_RE.sub(" ", t)
+    return frozenset(
+        w for w in t.lower().split()
+        if len(w) > 1 and w not in TITLE_STOPWORDS
+    )
+
+
+def _is_title_dup(a: frozenset[str], b: frozenset[str]) -> bool:
+    """Either side is a subset of the other, or Jaccard >= 0.5."""
+    if not a or not b:
+        return False
+    inter = len(a & b)
+    if inter == 0:
+        return False
+    if inter == len(a) or inter == len(b):
+        return True
+    return inter / len(a | b) >= 0.5
 
 
 def _extract_list_blocks(text: str) -> list[str]:
@@ -413,12 +463,16 @@ def collect_events_by_date() -> dict[date, list[dict]]:
     """Walk every daily file, parse out event-date candidates, dedupe across files.
     Horizon is intentionally excluded — it's an open-ended outlook, not a per-day list.
 
-    Dedupe key is (normalized_title, event_date). Files are iterated in ascending
-    date order with last-write-wins, so the entry from the digest closest to the
-    event date is the one that survives — typically the most polished version."""
+    Dedup is per-date with fuzzy token-set matching (see `_is_title_dup`), so
+    variants like "🔥 Jinjer", "JINJER", and "🔥 🔥 BM-adjacent Jinjer w/ Crystal
+    Lake, Entheos" collapse to one entry. When two entries merge, the longer
+    original title wins — terser repeats from a later digest don't overwrite a
+    more informative one. Marker-only entries (e.g. a stray "🔥 BM-adjacent"
+    section header that got parsed as a list item) tokenize to nothing and are
+    dropped."""
     if not EVENTS_DIR.exists():
         return {}
-    deduped: dict[tuple, dict] = {}
+    by_date: dict[date, list[dict]] = {}
     for p in sorted(EVENTS_DIR.iterdir()):
         m = DATE_RE.match(p.name)
         if not m:
@@ -433,13 +487,20 @@ def collect_events_by_date() -> dict[date, list[dict]]:
             title_m = TITLE_RE.search(block)
             if not title_m:
                 continue
-            title = title_m.group(1).strip()
+            raw_title = title_m.group(1).strip()
+            tokens = _title_tokens(raw_title)
+            if not tokens:
+                continue
             event_date = _parse_event_date(block, source_date)
             if not event_date:
                 continue
             url_m = URL_RE.search(block)
-            dedupe_key = (_normalize_title(title), event_date)
-            deduped[dedupe_key] = {
+            # Strip 🔥/BM-adjacent markers from the display title — the upcoming-list
+            # template already prepends a single 🔥 flag based on `bm_adjacent`, so
+            # leaving the markers in produces triple-fire titles when the longer
+            # "🔥 🔥 BM-adjacent X" variant wins the dedup.
+            title = COLLAPSE_WS_RE.sub(" ", BM_ADJACENT_DETECT_RE.sub(" ", raw_title)).strip()
+            entry = {
                 "title": title,
                 "kind": kind,
                 "event_date": event_date,
@@ -447,10 +508,20 @@ def collect_events_by_date() -> dict[date, list[dict]]:
                 "block": block,
                 "url": url_m.group(0) if url_m else None,
                 "bm_adjacent": bool(BM_ADJACENT_DETECT_RE.search(block)),
+                "_tokens": tokens,
             }
-    by_date: dict[date, list[dict]] = {}
-    for entry in deduped.values():
-        by_date.setdefault(entry["event_date"], []).append(entry)
+            bucket = by_date.setdefault(event_date, [])
+            for i, kept in enumerate(bucket):
+                if _is_title_dup(tokens, kept["_tokens"]):
+                    if len(title) > len(kept["title"]):
+                        bucket[i] = entry
+                    break
+            else:
+                bucket.append(entry)
+
+    for entries in by_date.values():
+        for e in entries:
+            e.pop("_tokens", None)
     return by_date
 
 
